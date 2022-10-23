@@ -4,7 +4,7 @@ use std::{
     io::Write,
 };
 
-use super::{NEW_LINE, file_from_dry_run};
+use super::{file_from_dry_run, NEW_LINE};
 
 // target/release/mute --dry-run tests/simple.toml remove after-pattern "^entry_"
 // target/release/mute tests/simple.toml remove after-pattern "^entry_"
@@ -87,8 +87,8 @@ pub fn remove_before_pattern(file_path: String, pattern: String, dry_run: bool) 
 
     let regex = Regex::new(pattern.as_str()).unwrap();
 
-    let mut line_iter = contents.split('\n').enumerate().peekable();
-    while let Some((index, line)) = line_iter.next() {
+    let line_iter = contents.split('\n').enumerate().peekable();
+    for (index, line) in line_iter {
         if regex.is_match(line) && index > 0 {
             skip_last = true;
         }
@@ -97,21 +97,17 @@ pub fn remove_before_pattern(file_path: String, pattern: String, dry_run: bool) 
             skip_last = false;
             line_skipped = true;
             if dry_run {
-                println!("(Line: {})\t --- {}", index + 1, line_buffer);
+                println!("(Line: {})\t --- {}", index, line_buffer);
             }
-        } else if !dry_run {
+        } else if !dry_run && index > 0 {
             file.write_all(line_buffer.as_bytes()).unwrap();
-            if line_iter.peek().is_some() {
-                file.write_all(&[NEW_LINE]).unwrap();
-            }
+            file.write_all(&[NEW_LINE]).unwrap();
         }
-
         line_buffer = line;
     }
 
     if !dry_run {
         file.write_all(line_buffer.as_bytes()).unwrap();
-        file.write_all(&[NEW_LINE]).unwrap();
     }
 
     file.flush().unwrap();
@@ -119,7 +115,6 @@ pub fn remove_before_pattern(file_path: String, pattern: String, dry_run: bool) 
         println!("WARNING: Pattern was not found. Please check the file, the regex and try again.");
     }
 }
-
 
 // target/release/mute --dry-run tests/simple.toml remove overwrite-pattern "^entry_"
 // target/release/mute tests/simple.toml remove overwrite-pattern "^entry_"
@@ -154,5 +149,117 @@ pub fn remove_overwrite_pattern(file_path: String, pattern: String, dry_run: boo
     file.flush().unwrap();
     if !line_skipped {
         println!("WARNING: Pattern was not found. Please check the file, the regex and try again.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use tempfile::NamedTempFile;
+
+    use crate::cmd::remove::{
+        remove_before_pattern, remove_overwrite_pattern, remove_via_line_number,
+    };
+
+    use super::remove_after_pattern;
+
+    const FAUX_FILE: &str = "[table]\n\
+    [[subtable1]]\n\
+    entry_1=\"one\"\n\
+    entry_2=\"two\"\n\
+    \n\
+    [[subtable2]]\n\
+    entry_4=\"four\"";
+
+    #[test]
+    fn test_rm_after_pattern() {
+        // create test file
+        let mut file1 = NamedTempFile::new().unwrap();
+        file1.write_all(FAUX_FILE.as_bytes()).unwrap();
+        file1.flush().unwrap();
+        let file_path = file1.path().to_str().unwrap().to_owned();
+        // mutate file
+        remove_after_pattern(file_path, "^\\[\\[subtable2]]".to_owned(), false);
+        // read in file
+        let mut mutated_contents = String::new();
+        let mut file2 = file1.reopen().unwrap();
+        file2.read_to_string(&mut mutated_contents).unwrap();
+        // compare results
+        let expected = "[table]\n\
+        [[subtable1]]\n\
+        entry_1=\"one\"\n\
+        entry_2=\"two\"\n\
+        \n\
+        [[subtable2]]\n";
+        assert_eq!(expected, mutated_contents);
+    }
+
+    #[test]
+    fn test_rm_via_line_number() {
+        // create test file
+        let mut file1 = NamedTempFile::new().unwrap();
+        file1.write_all(FAUX_FILE.as_bytes()).unwrap();
+        file1.flush().unwrap();
+        let file_path = file1.path().to_str().unwrap().to_owned();
+        // mutate file
+        remove_via_line_number(file_path, 1, false);
+        // read in file
+        let mut mutated_contents = String::new();
+        let mut file2 = file1.reopen().unwrap();
+        file2.read_to_string(&mut mutated_contents).unwrap();
+        // compare results
+        let expected = "[[subtable1]]\n\
+        entry_1=\"one\"\n\
+        entry_2=\"two\"\n\
+        \n\
+        [[subtable2]]\n\
+        entry_4=\"four\"";
+        assert_eq!(expected, mutated_contents);
+    }
+
+    #[test]
+    fn test_rm_before_pattern() {
+        // create test file
+        let mut file1 = NamedTempFile::new().unwrap();
+        file1.write_all(FAUX_FILE.as_bytes()).unwrap();
+        file1.flush().unwrap();
+        let file_path = file1.path().to_str().unwrap().to_owned();
+        // mutate file
+        remove_before_pattern(file_path, "^\\[\\[subtable1]]".to_owned(), false);
+        // read in file
+        let mut mutated_contents = String::new();
+        let mut file2 = file1.reopen().unwrap();
+        file2.read_to_string(&mut mutated_contents).unwrap();
+        // compare results
+        let expected = "[[subtable1]]\n\
+        entry_1=\"one\"\n\
+        entry_2=\"two\"\n\
+        \n\
+        [[subtable2]]\n\
+        entry_4=\"four\"";
+        assert_eq!(expected, mutated_contents);
+    }
+
+    #[test]
+    fn test_rm_overwrite_pattern() {
+        // create test file
+        let mut file1 = NamedTempFile::new().unwrap();
+        file1.write_all(FAUX_FILE.as_bytes()).unwrap();
+        file1.flush().unwrap();
+        let file_path = file1.path().to_str().unwrap().to_owned();
+        // mutate file
+        remove_overwrite_pattern(file_path, "^\\[table]".to_owned(), false);
+        // read in file
+        let mut mutated_contents = String::new();
+        let mut file2 = file1.reopen().unwrap();
+        file2.read_to_string(&mut mutated_contents).unwrap();
+        // compare results
+        let expected = "[[subtable1]]\n\
+        entry_1=\"one\"\n\
+        entry_2=\"two\"\n\
+        \n\
+        [[subtable2]]\n\
+        entry_4=\"four\"";
+        assert_eq!(expected, mutated_contents);
     }
 }

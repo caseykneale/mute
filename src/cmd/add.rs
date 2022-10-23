@@ -4,8 +4,8 @@ use std::{
     io::Write,
 };
 
-use crate::cmd::file_from_dry_run;
 use super::NEW_LINE;
+use crate::cmd::file_from_dry_run;
 
 // target/release/mute --dry-run tests/simple.toml "NEW_ENTRY" add after-pattern "^entry_"
 // target/release/mute tests/simple.toml "NEW_ENTRY" add after-pattern "^entry_"

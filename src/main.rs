@@ -8,7 +8,10 @@ use cmd::{
         add_after_pattern, add_before_pattern, add_via_line_number, overwrite_pattern,
         overwrite_via_line_number,
     },
-    remove::{remove_after_pattern, remove_before_pattern, remove_via_line_number, remove_overwrite_pattern},
+    remove::{
+        remove_after_pattern, remove_before_pattern, remove_overwrite_pattern,
+        remove_via_line_number,
+    },
 };
 
 use crate::cli::parser::{
@@ -32,18 +35,16 @@ fn main() {
             AfterPattern(pattern_mut) => {
                 remove_after_pattern(file_path, pattern_mut.pattern, dry_run)
             }
-            AtLine(line_mut) => {
-                remove_via_line_number(file_path, line_mut.line_number, dry_run)
-            },
+            AtLine(line_mut) => remove_via_line_number(file_path, line_mut.line_number, dry_run),
             BeforePattern(pattern_mut) => {
                 remove_before_pattern(file_path, pattern_mut.pattern, dry_run)
             }
             OverwritePattern(pattern_mut) => {
                 remove_overwrite_pattern(file_path, pattern_mut.pattern, dry_run)
-            },
+            }
             OverwriteLine(line_mut) => {
                 remove_via_line_number(file_path, line_mut.line_number, dry_run)
-            },
+            }
         },
         (Some(new_entry), Add(operation)) => match operation.command {
             AfterPattern(pattern_mut) => {
