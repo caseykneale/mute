@@ -1,13 +1,11 @@
 use regex::Regex;
 use std::{
     fs::{self},
-    io::Write,
+    io::Write, process,
 };
 
 use super::{file_from_dry_run, NEW_LINE};
 
-// target/release/mute --dry-run tests/simple.toml remove after-pattern "^entry_"
-// target/release/mute tests/simple.toml remove after-pattern "^entry_"
 pub fn remove_after_pattern(file_path: String, pattern: String, dry_run: bool) {
     let contents = fs::read_to_string(&file_path).unwrap();
     let mut line_skipped = false;
@@ -39,11 +37,10 @@ pub fn remove_after_pattern(file_path: String, pattern: String, dry_run: bool) {
     file.flush().unwrap();
     if !line_skipped {
         println!("WARNING: Pattern was not found. Please check the file, the regex and try again.");
+        process::exit(exitcode::DATAERR);
     }
 }
 
-// target/release/mute tests/simple.toml remove at-line 4
-// target/release/mute --dry-run tests/simple.toml remove at-line 4
 pub fn remove_via_line_number(file_path: String, line_no: usize, dry_run: bool) {
     assert_ne!(
         line_no, 0,
@@ -72,11 +69,10 @@ pub fn remove_via_line_number(file_path: String, line_no: usize, dry_run: bool) 
     file.flush().unwrap();
     if !line_skipped {
         println!("WARNING: Line was not found. Please check the file and try again.");
+        process::exit(exitcode::DATAERR);
     }
 }
 
-// target/release/mute --dry-run tests/simple.toml remove before-pattern "^entry_"
-// target/release/mute tests/simple.toml remove before-pattern "^entry_"
 pub fn remove_before_pattern(file_path: String, pattern: String, dry_run: bool) {
     let contents = fs::read_to_string(&file_path).unwrap();
     let mut line_skipped = false;
@@ -113,11 +109,10 @@ pub fn remove_before_pattern(file_path: String, pattern: String, dry_run: bool) 
     file.flush().unwrap();
     if !line_skipped {
         println!("WARNING: Pattern was not found. Please check the file, the regex and try again.");
+        process::exit(exitcode::DATAERR);
     }
 }
 
-// target/release/mute --dry-run tests/simple.toml remove overwrite-pattern "^entry_"
-// target/release/mute tests/simple.toml remove overwrite-pattern "^entry_"
 pub fn remove_overwrite_pattern(file_path: String, pattern: String, dry_run: bool) {
     let contents = fs::read_to_string(&file_path).unwrap();
     let mut line_skipped = false;
@@ -149,6 +144,7 @@ pub fn remove_overwrite_pattern(file_path: String, pattern: String, dry_run: boo
     file.flush().unwrap();
     if !line_skipped {
         println!("WARNING: Pattern was not found. Please check the file, the regex and try again.");
+        process::exit(exitcode::DATAERR);
     }
 }
 
@@ -158,10 +154,9 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use crate::cmd::remove::{
-        remove_before_pattern, remove_overwrite_pattern, remove_via_line_number,
+        remove_after_pattern, remove_before_pattern, remove_overwrite_pattern,
+        remove_via_line_number,
     };
-
-    use super::remove_after_pattern;
 
     const FAUX_FILE: &str = "[table]\n\
     [[subtable1]]\n\

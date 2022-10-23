@@ -1,14 +1,12 @@
 use regex::Regex;
 use std::{
     fs::{self},
-    io::Write,
+    io::Write, process,
 };
 
 use super::NEW_LINE;
 use crate::cmd::file_from_dry_run;
 
-// target/release/mute --dry-run tests/simple.toml "NEW_ENTRY" add after-pattern "^entry_"
-// target/release/mute tests/simple.toml "NEW_ENTRY" add after-pattern "^entry_"
 pub fn add_after_pattern(file_path: String, pattern: String, entry: String, dry_run: bool) {
     let contents = fs::read_to_string(&file_path).unwrap();
     let mut this_line = false;
@@ -43,11 +41,10 @@ pub fn add_after_pattern(file_path: String, pattern: String, entry: String, dry_
     file.flush().unwrap();
     if lines_found == 0 {
         println!("WARNING: Pattern was not found. Please check the file, the regex and try again.");
+        process::exit(exitcode::DATAERR);
     }
 }
 
-// target/release/mute tests/simple.toml "4" add at-line 5
-// target/release/mute --dry-run tests/simple.toml "4" add at-line 5
 pub fn add_via_line_number(file_path: String, line_no: usize, entry: String, dry_run: bool) {
     assert_ne!(
         line_no, 0,
@@ -82,11 +79,10 @@ pub fn add_via_line_number(file_path: String, line_no: usize, entry: String, dry
     file.flush().unwrap();
     if !line_found {
         println!("WARNING: Line was not found. Please check the file and try again.");
+        process::exit(exitcode::DATAERR);
     }
 }
 
-// target/release/mute --dry-run tests/simple.toml "NEW_ENTRY" add before-pattern "^entry_"
-// target/release/mute tests/simple.toml "NEW_ENTRY" add before-pattern "^entry_"
 pub fn add_before_pattern(file_path: String, pattern: String, entry: String, dry_run: bool) {
     let contents = fs::read_to_string(&file_path).unwrap();
     let mut this_line = false;
@@ -119,11 +115,10 @@ pub fn add_before_pattern(file_path: String, pattern: String, entry: String, dry
     file.flush().unwrap();
     if lines_found == 0 {
         println!("WARNING: Pattern was not found. Please check the file, the regex and try again.");
+        process::exit(exitcode::DATAERR);
     }
 }
 
-// target/release/mute tests/simple.toml "4" add overwrite-line 5
-// target/release/mute --dry-run tests/simple.toml "4" add overwrite-line 5
 pub fn overwrite_via_line_number(file_path: String, line_no: usize, entry: String, dry_run: bool) {
     assert_ne!(
         line_no, 0,
@@ -158,11 +153,10 @@ pub fn overwrite_via_line_number(file_path: String, line_no: usize, entry: Strin
     file.flush().unwrap();
     if !line_found {
         println!("WARNING: Line was not found. Please check the file and try again.");
+        process::exit(exitcode::DATAERR);
     }
 }
 
-// target/release/mute --dry-run tests/simple.toml "NEW_ENTRY" add overwrite-pattern "^entry_"
-// target/release/mute tests/simple.toml "NEW_ENTRY" add overwrite-pattern "^entry_"
 pub fn overwrite_pattern(file_path: String, pattern: String, entry: String, dry_run: bool) {
     let contents = fs::read_to_string(&file_path).unwrap();
     let mut this_line = false;
@@ -199,5 +193,163 @@ pub fn overwrite_pattern(file_path: String, pattern: String, entry: String, dry_
     file.flush().unwrap();
     if !found_line {
         println!("WARNING: Pattern was not found. Please check the file, the regex and try again.");
+        process::exit(exitcode::DATAERR);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use tempfile::NamedTempFile;
+
+    use crate::cmd::add::{
+        add_after_pattern, add_before_pattern, add_via_line_number, overwrite_pattern,
+        overwrite_via_line_number,
+    };
+
+    const FAUX_FILE: &str = "[table]\n\
+    [[subtable1]]\n\
+    entry_1=\"one\"\n\
+    entry_2=\"two\"\n\
+    \n\
+    [[subtable2]]\n\
+    entry_4=\"four\"";
+
+    #[test]
+    fn test_add_after_pattern() {
+        // create test file
+        let mut file1 = NamedTempFile::new().unwrap();
+        file1.write_all(FAUX_FILE.as_bytes()).unwrap();
+        file1.flush().unwrap();
+        let file_path = file1.path().to_str().unwrap().to_owned();
+        // mutate file
+        add_after_pattern(
+            file_path,
+            "^\\[\\[subtable2]]".to_owned(),
+            "check=1".to_owned(),
+            false,
+        );
+        // read in file
+        let mut mutated_contents = String::new();
+        let mut file2 = file1.reopen().unwrap();
+        file2.read_to_string(&mut mutated_contents).unwrap();
+        // compare results
+        let expected = "[table]\n\
+        [[subtable1]]\n\
+        entry_1=\"one\"\n\
+        entry_2=\"two\"\n\
+        \n\
+        [[subtable2]]\n\
+        check=1\n\
+        entry_4=\"four\"";
+        assert_eq!(expected, mutated_contents);
+    }
+
+    #[test]
+    fn test_add_via_linenumber() {
+        // create test file
+        let mut file1 = NamedTempFile::new().unwrap();
+        file1.write_all(FAUX_FILE.as_bytes()).unwrap();
+        file1.flush().unwrap();
+        let file_path = file1.path().to_str().unwrap().to_owned();
+        // mutate file
+        add_via_line_number(file_path, 3, "entry_0=\"zero\"".to_owned(), false);
+        // read in file
+        let mut mutated_contents = String::new();
+        let mut file2 = file1.reopen().unwrap();
+        file2.read_to_string(&mut mutated_contents).unwrap();
+        // compare results
+        let expected = "[table]\n\
+        [[subtable1]]\n\
+        entry_0=\"zero\"\n\
+        entry_1=\"one\"\n\
+        entry_2=\"two\"\n\
+        \n\
+        [[subtable2]]\n\
+        entry_4=\"four\"";
+        assert_eq!(expected, mutated_contents);
+    }
+
+    #[test]
+    fn test_add_before_pattern() {
+        // create test file
+        let mut file1 = NamedTempFile::new().unwrap();
+        file1.write_all(FAUX_FILE.as_bytes()).unwrap();
+        file1.flush().unwrap();
+        let file_path = file1.path().to_str().unwrap().to_owned();
+        // mutate file
+        add_before_pattern(
+            file_path,
+            "^entry_1".to_owned(),
+            "entry_0=\"zero\"".to_owned(),
+            false,
+        );
+        // read in file
+        let mut mutated_contents = String::new();
+        let mut file2 = file1.reopen().unwrap();
+        file2.read_to_string(&mut mutated_contents).unwrap();
+        // compare results
+        let expected = "[table]\n\
+        [[subtable1]]\n\
+        entry_0=\"zero\"\n\
+        entry_1=\"one\"\n\
+        entry_2=\"two\"\n\
+        \n\
+        [[subtable2]]\n\
+        entry_4=\"four\"";
+        assert_eq!(expected, mutated_contents);
+    }
+
+    #[test]
+    fn test_overwrite_line() {
+        // create test file
+        let mut file1 = NamedTempFile::new().unwrap();
+        file1.write_all(FAUX_FILE.as_bytes()).unwrap();
+        file1.flush().unwrap();
+        let file_path = file1.path().to_str().unwrap().to_owned();
+        // mutate file
+        overwrite_via_line_number(file_path, 1, "[tabby]".to_owned(), false);
+        // read in file
+        let mut mutated_contents = String::new();
+        let mut file2 = file1.reopen().unwrap();
+        file2.read_to_string(&mut mutated_contents).unwrap();
+        // compare results
+        let expected = "[tabby]\n\
+        [[subtable1]]\n\
+        entry_1=\"one\"\n\
+        entry_2=\"two\"\n\
+        \n\
+        [[subtable2]]\n\
+        entry_4=\"four\"";
+        assert_eq!(expected, mutated_contents);
+    }
+
+    #[test]
+    fn test_overwrite_pattern() {
+        // create test file
+        let mut file1 = NamedTempFile::new().unwrap();
+        file1.write_all(FAUX_FILE.as_bytes()).unwrap();
+        file1.flush().unwrap();
+        let file_path = file1.path().to_str().unwrap().to_owned();
+        // mutate file
+        overwrite_pattern(
+            file_path,
+            "^\\[table".to_owned(),
+            "[tabby]".to_owned(),
+            false,
+        );
+        // read in file
+        let mut mutated_contents = String::new();
+        let mut file2 = file1.reopen().unwrap();
+        file2.read_to_string(&mut mutated_contents).unwrap();
+        // compare results
+        let expected = "[tabby]\n\
+        [[subtable1]]\n\
+        entry_1=\"one\"\n\
+        entry_2=\"two\"\n\
+        \n\
+        [[subtable2]]\n\
+        entry_4=\"four\"";
+        assert_eq!(expected, mutated_contents);
     }
 }
