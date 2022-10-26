@@ -21,7 +21,7 @@ entry_2="two"
 
 ## More Examples
 
-**Remove the 4th line from the file `simple.toml`.**
+**Remove the 4th line from the file `big.conf`.**
 ```bash
 mute big.conf remove at-line 4
 ```
